@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+httpx
+
+# PDF + LLM
+pymupdf
+groq        # Whisper, and the Qwen brain when LLM_PROVIDER=groq
+openai      # OpenAI-shaped chat client for LLM_PROVIDER=openrouter|gemini (llm.py)
+sarvamai    # Bulbul voice when TTS_PROVIDER=sarvam (voice.py)
+
+# Auth (Devansh)
+google-auth
+requests   # google-auth transport needs it to fetch Google's signing keys
+pyjwt
+
+# Supabase Postgres when DATABASE_URL is set
+psycopg[binary]

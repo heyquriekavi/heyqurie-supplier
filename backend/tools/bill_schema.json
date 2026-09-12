@@ -1,0 +1,51 @@
+{
+ "type": "object",
+ "properties": {
+  "seller_name": {"type": "string", "description": "Name of the shop, supplier or business that issued the bill"},
+  "seller_gstin": {"type": "string", "description": "15-character GSTIN of the seller, if printed"},
+  "seller_phone": {"type": "string", "description": "Seller phone or mobile number"},
+  "seller_licence": {"type": "string", "description": "Seller drug licence number, printed as D.L. No or DL No on pharmacy bills. Join multiple numbers with a comma"},
+  "buyer_name": {"type": "string", "description": "Name of the customer or party the bill is issued to"},
+  "buyer_gstin": {"type": "string", "description": "15-character GSTIN of the buyer or party the bill is issued to, if printed"},
+  "buyer_licence": {"type": "string", "description": "Buyer drug licence number, if printed"},
+  "invoice_number": {"type": "string", "description": "Bill, invoice or receipt number"},
+  "bill_date": {"type": "string", "description": "Date on the bill, as written"},
+  "due_date": {"type": "string", "description": "Due date or payment date, if any"},
+  "salesman": {"type": "string", "description": "Salesman, agent or representative name printed on the bill"},
+  "order_number": {"type": "string", "description": "Purchase order or order reference number, if printed"},
+  "subtotal": {"type": "number", "description": "Taxable value: the amount before tax, in rupees"},
+  "discount_amount": {"type": "number", "description": "Total discount in rupees, if shown as a separate line"},
+  "cgst_amount": {"type": "number", "description": "CGST amount in rupees. Only the CGST half, not the total tax"},
+  "sgst_amount": {"type": "number", "description": "SGST or UTGST amount in rupees. Only the SGST half, not the total tax"},
+  "igst_amount": {"type": "number", "description": "IGST amount in rupees, on an interstate bill"},
+  "cess_amount": {"type": "number", "description": "Cess amount in rupees, if any"},
+  "tax_amount": {"type": "number", "description": "Total GST on the bill in rupees, all components added together"},
+  "round_off": {"type": "number", "description": "Rounding adjustment in rupees. Negative if it was subtracted"},
+  "total_amount": {"type": "number", "description": "Grand total payable in rupees"},
+  "amount_in_words": {"type": "string", "description": "The total written out in words, if printed"},
+  "terms": {"type": "string", "description": "Payment terms or credit days, if printed"},
+  "is_handwritten": {"type": "boolean", "description": "True if the key values are handwritten rather than printed"},
+  "items": {
+   "type": "array",
+   "description": "Line items on the bill, one entry per row of the table",
+   "items": {
+    "type": "object",
+    "description": "One line item",
+    "properties": {
+     "description": {"type": "string", "description": "Item or product name"},
+     "pack": {"type": "string", "description": "Pack or packing size, such as 10x10, 1x30ML, STRIP"},
+     "hsn": {"type": "string", "description": "HSN or SAC code for this line"},
+     "batch": {"type": "string", "description": "Batch number for this line"},
+     "expiry": {"type": "string", "description": "Expiry date for this line, as written, often MM/YY"},
+     "qty": {"type": "number", "description": "Quantity billed"},
+     "free_qty": {"type": "number", "description": "Free or scheme quantity, if a separate column"},
+     "mrp": {"type": "number", "description": "Printed maximum retail price per unit in rupees"},
+     "rate": {"type": "number", "description": "Rate charged per unit in rupees, before tax"},
+     "discount_pct": {"type": "number", "description": "Discount percentage on this line"},
+     "gst_pct": {"type": "number", "description": "Total GST percentage on this line, for example 12 or 18"},
+     "amount": {"type": "number", "description": "Line amount in rupees"}
+    }
+   }
+  }
+ }
+}
