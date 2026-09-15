@@ -6,13 +6,24 @@ import { clearTokens, getTokens, KEYS, request, setTokens } from './http';
 import { getItem, setItem } from './storage';
 import { Lang, LANGUAGES, Strings, strings } from './strings';
 
+/** The whole shops row, which /auth/me and /shops/me both return. */
 export type Shop = {
   id: string;
   name: string;
   type: string;
   gstin: string | null;
+  scheme: string | null;
+  state_code: string | null;
   address: string | null;
+  lat: number | null;
+  lng: number | null;
   city: string | null;
+  pin: string | null;
+  ca_name: string | null;
+  ca_phone: string | null;
+  ca_email: string | null;
+  plan: string | null;
+  plan_until: string | null;
 };
 export type User = {
   id: string;
@@ -51,7 +62,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           useAppState.getState().setLanguage(saved);
         }
         const { access, refresh } = await getTokens();
-        if (access || refresh) setUser(await request<User>('/api/v1/auth/me'));
+        if (access || refresh) {
+          const me = await request<User>('/api/v1/auth/me');
+          setUser(me);
+          // Read the conversation back before the first screen paints.
+          await useAppState.getState().hydrateChat(me.shop_id);
+        }
       } catch {
         await clearTokens();
       } finally {
@@ -73,6 +89,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signIn: async (tokens, u) => {
       await setTokens(tokens);
       setUser(u);
+      await useAppState.getState().hydrateChat(u.shop_id);
     },
     setUser,
     signOut: async () => {
@@ -80,6 +97,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (refresh) request('/api/v1/auth/logout', { body: { refresh_token: refresh }, auth: false }).catch(() => {});
       await clearTokens();
       setUser(null);
+      // The next person to sign in on this phone must not see this chat.
+      await useAppState.getState().clearChat();
     },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

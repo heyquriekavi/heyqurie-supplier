@@ -44,9 +44,15 @@ class ShopIn(BaseModel):
     city: str | None = None
     lat: float | None = None
     lng: float | None = None
-    gstin: str | None = None          # not on the setup screen for now; kept for the CA pack later
+    gstin: str | None = None
+    scheme: str | None = None         # regular | composition | unregistered
+    pin: str | None = None
     ca_name: str | None = None
     ca_phone: str | None = None
+    ca_email: str | None = None
+
+
+SCHEMES = {"regular", "composition", "unregistered"}
 
 
 def clean(body: ShopIn) -> dict:
@@ -60,15 +66,36 @@ def clean(body: ShopIn) -> dict:
         raise HTTPException(400, "GSTIN does not look right. Check the 15 characters.")
     if body.lat is not None and not (-90 <= body.lat <= 90 and body.lng is not None and -180 <= body.lng <= 180):
         raise HTTPException(400, "Location does not look right.")
+
+    # A composition dealer has a GSTIN too and may not charge GST separately, so
+    # this is the owner's answer, not something to guess from having a number.
+    scheme = (body.scheme or "").strip().lower() or None
+    if scheme and scheme not in SCHEMES:
+        raise HTTPException(400, f"scheme must be one of {sorted(SCHEMES)}")
+    if scheme is None:
+        scheme = "regular" if gstin else "unregistered"
+    if scheme != "unregistered" and not gstin:
+        raise HTTPException(400, "Add the GSTIN, or set the scheme to unregistered.")
+
+    pin = re.sub(r"\D", "", body.pin or "") or None
+    if pin and len(pin) != 6:
+        raise HTTPException(400, "A PIN code is 6 digits.")
+
+    ca_email = (body.ca_email or "").strip() or None
+    if ca_email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", ca_email):
+        raise HTTPException(400, "That CA email does not look right.")
+
     return {"name": name, "type": body.type, "gstin": gstin,
-            "scheme": "regular" if gstin else "unregistered",
+            "scheme": scheme,
             "state_code": gstin[:2] if gstin else None,
             "owner_name": (body.owner_name or "").strip() or None,
             "address": (body.address or "").strip() or None,
             "lat": body.lat, "lng": body.lng,
             "city": (body.city or "").strip() or None,
+            "pin": pin,
             "ca_name": (body.ca_name or "").strip() or None,
-            "ca_phone": (body.ca_phone or "").strip() or None}
+            "ca_phone": (body.ca_phone or "").strip() or None,
+            "ca_email": ca_email}
 
 
 def access_token(user_id: str, shop_id: str, role: str) -> str:
@@ -86,10 +113,10 @@ def create_shop(body: ShopIn, user: dict = Depends(get_current_user)):
     shop_id = str(uuid.uuid4())
     with db.connect() as conn:
         conn.execute(
-            "INSERT INTO shops (id, name, type, gstin, scheme, state_code, address, lat, lng, city, ca_name, ca_phone, plan_until) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO shops (id, name, type, gstin, scheme, state_code, address, lat, lng, city, pin, ca_name, ca_phone, ca_email, plan_until) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (shop_id, fields["name"], fields["type"], fields["gstin"], fields["scheme"], fields["state_code"],
-             fields["address"], fields["lat"], fields["lng"], fields["city"], fields["ca_name"], fields["ca_phone"],
+             fields["address"], fields["lat"], fields["lng"], fields["city"], fields["pin"], fields["ca_name"], fields["ca_phone"], fields["ca_email"],
              (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")),
         )
         conn.execute("UPDATE users SET shop_id = ?, name = COALESCE(?, name) WHERE id = ?", (shop_id, fields["owner_name"], user["id"]))
@@ -114,8 +141,8 @@ def update_shop(body: ShopIn, user: dict = Depends(get_current_user)):
     fields = clean(body)
     with db.connect() as conn:
         conn.execute(
-            "UPDATE shops SET name=?, type=?, gstin=?, scheme=?, state_code=?, address=?, lat=?, lng=?, city=?, ca_name=?, ca_phone=? WHERE id=?",
-            (*[fields[k] for k in ("name", "type", "gstin", "scheme", "state_code", "address", "lat", "lng", "city", "ca_name", "ca_phone")],
+            "UPDATE shops SET name=?, type=?, gstin=?, scheme=?, state_code=?, address=?, lat=?, lng=?, city=?, pin=?, ca_name=?, ca_phone=?, ca_email=? WHERE id=?",
+            (*[fields[k] for k in ("name", "type", "gstin", "scheme", "state_code", "address", "lat", "lng", "city", "pin", "ca_name", "ca_phone", "ca_email")],
              user["shop_id"]),
         )
         if fields["owner_name"]:

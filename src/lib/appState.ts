@@ -15,6 +15,7 @@ import * as mock from './mock';
 import { orderTotal, parseCollection, parseOrder } from './orders';
 import * as server from './server';
 import type { PayMode } from './types';
+import * as chat from './chatStore';
 import type { Lang } from './strings';
 import type { Attachment, Collection, Draft, DraftFields, InvoiceDraft, InvoiceLine, Item, Message, Order, OrderLine, Period, Person, Txn } from './types';
 
@@ -42,6 +43,10 @@ type State = {
   /** Pull shops, brands, bills and payments from the server. Called after login and after every write. */
   refresh: () => Promise<void>;
   loaded: boolean;
+  /** Read the chat back from the device, then catch up with the server. */
+  hydrateChat: (shopId: string | null) => Promise<void>;
+  chatReady: boolean;
+  clearChat: () => Promise<void>;
   setVoiceOpen: (open: boolean) => void;
   addMessages: (msgs: Message[]) => void;
   setPeriod: (p: Period) => void;
@@ -123,11 +128,69 @@ function findShop(text: string, people: Person[]): Person | undefined {
 }
 
 export const useAppState = create<State>((set, get) => {
-  const push = (...m: Message[]) => set({ messages: [...get().messages, ...m] });
+  const push = (...m: Message[]) => {
+    set({ messages: [...get().messages, ...m] });
+    persist();
+  };
+
+  // --- keeping the conversation -------------------------------------------
+  // Written to the device after a quiet moment rather than on every keystroke,
+  // and pushed to the server in the same beat. A failed push is not an error the
+  // owner should see: the device copy is already safe and the ids are idempotent,
+  // so the next push sends it again.
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let pushing = false;
+
+  const snapshot = (): chat.Snapshot => {
+    const st = get();
+    return {
+      v: 1,
+      shopId: currentShopId,
+      messages: st.messages,
+      orders: st.orders,
+      invoices: st.invoices,
+      collections: st.collections,
+      drafts: st.drafts,
+      synced: [...syncedIds],
+    };
+  };
+
+  const syncedIds = new Set<string>();
+  // Whose chat is on this device. Guards against showing one shop's history to
+  // another account signed in on the same phone.
+  let currentShopId: string | null = null;
+
+  const pushToServer = async () => {
+    if (pushing) return;
+    const pending = get().messages.filter((m) => !syncedIds.has(m.id) && (m.text || m.card));
+    if (!pending.length) return;
+    pushing = true;
+    try {
+      const batch = pending.slice(-200).map((m) => ({
+        id: m.id, role: m.role, at: m.at, text: m.text ?? null,
+        card: (m.card ?? null) as unknown, attachment: (m.attachment ?? null) as unknown,
+      }));
+      await server.putChat(batch);
+      for (const m of batch) syncedIds.add(m.id);
+    } catch {
+      // Offline, or not signed in yet. The device copy stands; try again later.
+    } finally {
+      pushing = false;
+    }
+  };
+
+  const persist = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      chat.saveLocal(snapshot());
+      pushToServer();
+    }, 600);
+  };
   const patchDraft = (draftId: string, patch: Partial<Draft>, fields?: Partial<DraftFields>) => {
     const d = get().drafts[draftId];
     if (!d) return;
     set({ drafts: { ...get().drafts, [draftId]: { ...d, ...patch, fields: { ...d.fields, ...fields } } } });
+    persist();
   };
   /** "incl. 445.10 tax (CGST 222.55 + SGST 222.55)" - what the bill charged, said out loud. */
   const taxLine = (m: {
@@ -154,16 +217,19 @@ export const useAppState = create<State>((set, get) => {
     const o = get().orders[orderId];
     if (!o) return;
     set({ orders: { ...get().orders, [orderId]: { ...o, ...patch } } });
+    persist();
   };
   const patchInvoice = (iid: string, patch: Partial<InvoiceDraft>) => {
     const d = get().invoices[iid];
     if (!d) return;
     set({ invoices: { ...get().invoices, [iid]: { ...d, ...patch } } });
+    persist();
   };
   const patchCollection = (cid: string, patch: Partial<Collection>) => {
     const c = get().collections[cid];
     if (!c) return;
     set({ collections: { ...get().collections, [cid]: { ...c, ...patch } } });
+    persist();
   };
   const shopName = (shopId?: string) => get().people.find((p) => p.id === shopId)?.name ?? 'the shop';
 
@@ -436,16 +502,18 @@ export const useAppState = create<State>((set, get) => {
       }
       // Who paid, and how much. The name can come before or after the amount, so
       // each order of the words is matched on its own.
-      const paidBy = clean.match(/^(.+?)\s+(?:has |have )?(?:paid|pays|gave|given|sent|settled|cleared|deposited|transferred)\s+(.+)$/i)
+      const paidBy = clean.match(/^(.+?)\s+(?:has |have |had )?(?:already\s+)?(?:paid|pay|pays|payed|gave|give|given|sent|send|settled|settle|cleared|clear|deposited|deposit|transferred|transfer|returned)\s+(.+)$/i)
         || clean.match(/^(.+?)\s+(?:ne|se)\s+(.+?)\s*(?:diye|diya|mila|mile|aaya|aaye|de diye)\.?$/i);
-      const fromWho = clean.match(/^(?:received|recieved|got|collected|took|take)\s+(.+?)\s+(?:from|se)\s+(.+?)\.?$/i)
+      const fromWho = clean.match(/^(?:received|recieved|recived|receved|rcvd|got|collected|collect|took|take)\s+(.+?)\s+(?:from|se)\s+(.+?)\.?$/i)
+        // amount first: "2 lakh received from Balaji"
+        || clean.match(/^(.+?)\s+(?:received|recieved|recived|receved|rcvd|collected|got)\s+(?:from|se)\s+(.+?)\.?$/i)
         || clean.match(/^(?:payment|paid|collection|amount)\s*(?:of|:)?\s*(.+?)\s+(?:from|for|by|against)\s+(.+?)\.?$/i)
         || clean.match(/^(?:record|add|enter|log|note)\s+(?:a\s+)?(?:payment|collection)\s*(?:of|:)?\s*(.+?)\s+(?:from|for|by|against)\s+(.+?)\.?$/i);
       const payMatch = paidBy ? { who: paidBy[1], amount: paidBy[2] } : fromWho ? { who: fromWho[2], amount: fromWho[1] } : null;
 
       // A payment verb and a number, phrased some way none of the above caught.
       const looksLikePayment =
-        /\b(paid|payment|collect|collected|collection|received|recieved|settle|settled|cleared|deposit|deposited|diye|diya|mila|mile|aaya|aaye|jama)\b/i.test(clean) &&
+        /\b(paid|payed|pay|pays|payment|pmt|collect|collected|collection|receive[ds]?|recieved|recived|receved|rcvd|settle[ds]?|clear(?:ed)?|deposit(?:ed)?|transfer(?:red)?|diye|diya|mila|mile|aaya|aaye|jama)\b/i.test(clean) &&
         /\d/.test(clean);
 
       if (payMatch || looksLikePayment) {
@@ -484,6 +552,62 @@ export const useAppState = create<State>((set, get) => {
         push(...(await ask(clean)));
       } finally {
         set({ sending: false });
+      }
+    },
+
+    chatReady: false,
+
+    hydrateChat: async (shopId) => {
+      currentShopId = shopId ?? null;
+      const local = await chat.loadLocal();
+      // A different account on the same device must not see the last one's chat.
+      const mine = local && (!local.shopId || !shopId || local.shopId === shopId) ? local : null;
+      if (mine) {
+        for (const id of mine.synced ?? []) syncedIds.add(id);
+        set({
+          messages: mine.messages.length ? mine.messages : get().messages,
+          orders: { ...get().orders, ...mine.orders },
+          invoices: { ...get().invoices, ...mine.invoices },
+          collections: { ...get().collections, ...mine.collections },
+          drafts: { ...get().drafts, ...mine.drafts },
+        });
+      } else if (local) {
+        await chat.clearLocal();
+      }
+      set({ chatReady: true });
+
+      // Then catch up with the server: anything newer, plus anything it has that
+      // this device never saw. Merging by id means a resend cannot duplicate.
+      if (!shopId) return;
+      try {
+        const since = chat.newestAt(get().messages);
+        const { messages } = await server.getChat(since);
+        if (messages?.length) {
+          const incoming = messages.map((m) => ({
+            id: m.id, role: m.role as Message['role'], at: m.at,
+            text: m.text ?? undefined,
+            card: (m.card ?? undefined) as Message['card'],
+            attachment: (m.attachment ?? undefined) as Message['attachment'],
+          }));
+          for (const m of incoming) syncedIds.add(m.id);
+          set({ messages: chat.trim(chat.merge(get().messages, incoming)) });
+        }
+        await pushToServer();
+        await chat.saveLocal(snapshot());
+      } catch {
+        // No network, or no shop yet. The device copy is what the screen shows.
+      }
+    },
+
+    clearChat: async () => {
+      syncedIds.clear();
+      set({ messages: [], orders: {}, invoices: {}, collections: {}, drafts: {},
+            activeOrderId: undefined, activeInvoiceId: undefined, activeCollectionId: undefined, activeDraftId: undefined });
+      await chat.clearLocal();
+      try {
+        await server.clearChat();
+      } catch {
+        // Cleared here even if the server could not be reached.
       }
     },
 

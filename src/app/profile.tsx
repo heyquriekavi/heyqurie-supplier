@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, Switch, View } from 'react-native';
+import { useMemo } from 'react';
+import { Alert, Linking, Pressable, ScrollView, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Txt } from '@/components/Txt';
-import { getShop } from '@/lib/api';
+import { getPeople, personSummary } from '@/lib/api';
 import { useAppState } from '@/lib/appState';
+import { rupees } from '@/lib/format';
 import { API_URL } from '@/lib/http';
 import { useSession } from '@/lib/session';
 import { LANGUAGES } from '@/lib/strings';
@@ -61,14 +63,34 @@ function Group({ title, rows }: { title: string; rows: Row[] }) {
 
 export default function Profile() {
   const router = useRouter();
-  const shop = getShop();
+  const { setLang, signOut, user } = useSession();
+  const shop = user?.shop;
+  const shopType = shop?.type ? shop.type[0].toUpperCase() + shop.type.slice(1) : undefined;
   const voiceOn = useAppState((s) => s.voiceOn);
   const toggleVoice = useAppState((s) => s.toggleVoice);
   const language = useAppState((s) => s.language);
-  const { setLang, signOut } = useSession();
   const setLanguage = setLang;
 
-  const soon = (what: string) => () => Alert.alert(what, 'Arrives in a later build.');
+  const soon = (what: string, why: string) => () => Alert.alert(what, why);
+
+  const clearChat = useAppState((s) => s.clearChat);
+  const orders = useAppState((s) => s.orders);
+  const txns = useAppState((s) => s.txns);
+  const openOrders = Object.values(orders).filter((o) => o.stage !== 'billed' && o.stage !== 'cancelled').length;
+  // What the shops still owe: the number the owner checks first.
+  const dueTotal = useMemo(
+    () => getPeople('customer').reduce((n, p) => n + personSummary(p.id).duePaise, 0),
+    [txns],
+  );
+  const confirmClearChat = () =>
+    Alert.alert(
+      'Clear chat history',
+      'Removes the conversation from this phone and from the server. Your shops, bills and payments are not touched.',
+      [
+        { text: 'Cancel', style: 'cancel' as const },
+        { text: 'Clear', style: 'destructive' as const, onPress: () => clearChat() },
+      ],
+    );
 
   const current = LANGUAGES.find((l) => l.code === language) ?? LANGUAGES[0];
   const pickLanguage = () =>
@@ -89,11 +111,11 @@ export default function Profile() {
       <ScreenHeader title="Profile" />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.xl, paddingBottom: space.xxl }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-          <Avatar name={shop.name} shape="square" size={72} />
+          <Avatar name={shop?.name ?? 'Q'} shape="square" size={72} />
           <View style={{ flex: 1 }}>
-            <Txt v="title">{shop.name}</Txt>
+            <Txt v="title">{shop?.name ?? 'Your business'}</Txt>
             <Txt v="secondary" color={colors.muted}>
-              {shop.city}
+              {[shop?.city, user?.name].filter(Boolean).join(' · ') || 'Tap Edit shop to fill this in'}
             </Txt>
           </View>
         </View>
@@ -101,10 +123,11 @@ export default function Profile() {
         <Group
           title="Shop"
           rows={[
-            { label: 'Owner phone', value: shop.ownerPhone },
-            { label: 'GSTIN', value: shop.gstin },
-            { label: 'Shop type', value: shop.type[0].toUpperCase() + shop.type.slice(1) },
-            { label: 'Edit shop', onPress: soon('Edit shop') },
+            { label: 'Owner phone', value: user?.phone ?? '—' },
+            { label: 'GSTIN', value: shop?.gstin || 'Not added', onPress: () => router.push('/edit-shop') },
+            { label: 'Shop type', value: shopType ?? '—', onPress: () => router.push('/edit-shop') },
+            { label: 'Address', value: [shop?.address, shop?.city].filter(Boolean).join(', ') || 'Not added', onPress: () => router.push('/edit-shop') },
+            { label: 'Edit shop', onPress: () => router.push('/edit-shop') },
           ]}
         />
 
@@ -113,18 +136,17 @@ export default function Profile() {
           rows={[
             { label: 'Shops', onPress: () => router.push('/people') },
             { label: 'Brands', onPress: () => router.push({ pathname: '/people', params: { tab: 'brands' } }) },
-            { label: 'All bills', onPress: soon('Bills list') },
-            { label: 'Dues', onPress: soon('Dues') },
-            { label: 'Orders', onPress: soon('Orders list') },
-            { label: 'Beats', onPress: soon('Beat planning') },
+            { label: 'All bills', onPress: () => router.push('/all-bills') },
+            { label: 'Dues', value: dueTotal ? rupees(dueTotal) : undefined, onPress: () => router.push('/dues') },
+            { label: 'Orders', value: openOrders ? `${openOrders} open` : undefined, onPress: () => router.push('/orders') },
           ]}
         />
 
         <Group
           title="CA"
           rows={[
-            { label: shop.caName, value: shop.caPhone },
-            { label: 'Send this month to CA', onPress: soon('CA pack') },
+            { label: shop?.ca_name || 'No CA added', value: shop?.ca_phone || undefined, onPress: () => router.push('/edit-shop') },
+            { label: 'Send this month to CA', onPress: soon('Send this month to CA', 'Not built yet. It will put the month\u2019s bills and payments into one file and send it to the CA above.') },
           ]}
         />
 
@@ -133,15 +155,29 @@ export default function Profile() {
           rows={[
             { label: 'Voice replies', toggle: { value: voiceOn, onChange: toggleVoice } },
             { label: 'Language', value: `${current.label} (${current.own})`, onPress: pickLanguage },
+            { label: 'Clear chat history', onPress: confirmClearChat },
           ]}
         />
 
         <Group
           title="Account"
           rows={[
-            { label: 'Export all data', onPress: soon('Export') },
-            { label: 'Subscription', value: 'Trial', onPress: soon('Subscription') },
-            { label: 'Help', onPress: soon('Help') },
+            { label: 'Export all data', onPress: soon('Export all data', 'Not built yet. Meanwhile everything is in your Supabase project and can be read from there.') },
+            { label: 'Subscription', value: shop?.plan ? shop.plan[0].toUpperCase() + shop.plan.slice(1) : 'Trial', onPress: soon('Subscription', 'Not built yet. Nothing is charged and nothing expires while Qurie is in testing.') },
+            {
+              label: 'Help',
+              value: '7867922243',
+              onPress: () =>
+                Alert.alert(
+                  'Help',
+                  'Ask Qurie in the chat \u2014 she answers about your shops, brands, bills and dues.\n\nFor anything else, call or message 7867922243.',
+                  [
+                    { text: 'Close', style: 'cancel' as const },
+                    { text: 'Call', onPress: () => Linking.openURL('tel:7867922243') },
+                    { text: 'WhatsApp', onPress: () => Linking.openURL('https://wa.me/917867922243') },
+                  ],
+                ),
+            },
             { label: 'Server', value: API_URL.replace(/^https?:\/\//, '') },
             { label: 'Log out', danger: true, onPress: () => { signOut().then(() => router.replace('/(auth)/welcome')); } },
           ]}

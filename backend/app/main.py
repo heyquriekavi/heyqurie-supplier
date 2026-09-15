@@ -13,6 +13,7 @@ Routes, all under /api/v1 except the health check:
   ledger.py          shops and brands, bills with their lines and photo, payments, home
   bills.py           reading a bill photo
   voice_api.py       /voice (spoken) and /ask (typed), both answered by ask.py
+  chat.py            chat history, kept so a reload or a new phone does not lose it
   ask.py             retrieval: route the question, run our SQL, phrase the rows
   storage.py         where bill photos live
   migrate.py         applies migrations/*.sql at start, on Postgres and SQLite alike
@@ -22,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db, migrate
 from .bills import router as bills_router
+from .chat import router as chat_router
 from .ledger import router as ledger_router
 from .otp import router as otp_router
 from .shops import router as shops_router
@@ -45,6 +47,7 @@ app.include_router(shops_router)   # /api/v1/shops
 app.include_router(ledger_router)  # /api/v1/people, /bills, /payments, /home
 app.include_router(bills_router)   # /api/v1/bills/read
 app.include_router(voice_router)   # /api/v1/voice, /api/v1/ask
+app.include_router(chat_router)    # /api/v1/chat
 
 db.init_db()    # SQLite only: creates the base tables the first migration expects
 migrate.run()

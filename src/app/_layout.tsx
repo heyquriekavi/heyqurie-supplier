@@ -60,6 +60,10 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="people" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="edit-shop" />
+        <Stack.Screen name="all-bills" />
+        <Stack.Screen name="dues" />
+        <Stack.Screen name="orders" />
         <Stack.Screen name="supplier/[id]" />
         <Stack.Screen name="customer/[id]" />
         <Stack.Screen name="bill/[id]" />

@@ -1,0 +1,19 @@
+{
+  "cli": { "version": ">= 24.0.0", "appVersionSource": "local" },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://Divyas-MacBook-Air.local:8001"
+      }
+    },
+    "production": {
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-THE-HOSTED-BACKEND"
+      }
+    }
+  },
+  "submit": { "production": {} }
+}

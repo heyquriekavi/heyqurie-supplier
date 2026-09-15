@@ -19,6 +19,37 @@ export type ServerBill = {
 };
 
 export const listPeople = (kind: 'customer' | 'supplier') => request<ServerPerson[]>(`/api/v1/people?kind=${kind}`);
+/**
+ * PATCH /api/v1/shops/me. The server writes every column it knows about, so a
+ * field left out is a field cleared: always send the whole shop, not a diff.
+ */
+type ServerShop = Record<string, unknown>;
+type ServerMessage = { id: string; role: string; at: string; text?: string | null; card?: unknown; attachment?: unknown };
+
+export const getChat = (since?: string) =>
+  request<{ messages: ServerMessage[] }>(`/api/v1/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`);
+
+export const putChat = (messages: ServerMessage[]) =>
+  request<{ saved: number }>('/api/v1/chat', { method: 'POST', body: { messages } });
+
+export const clearChat = () => request<{ deleted: number }>('/api/v1/chat', { method: 'DELETE' });
+
+export const updateShop = (body: {
+  name: string;
+  type: string;
+  owner_name?: string | null;
+  gstin?: string | null;
+  scheme?: string | null;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  city?: string | null;
+  pin?: string | null;
+  ca_name?: string | null;
+  ca_phone?: string | null;
+  ca_email?: string | null;
+}) => request<ServerShop>('/api/v1/shops/me', { method: 'PATCH', body });
+
 export const createPerson = (body: { kind: 'customer' | 'supplier'; name: string; phone?: string; gstin?: string; credit_days?: number; paired?: boolean; beat?: string }) =>
   request<ServerPerson>('/api/v1/people', { method: 'POST', body });
 export const listBills = (q: { kind?: 'purchase' | 'sale'; person_id?: string; month?: string } = {}) => {

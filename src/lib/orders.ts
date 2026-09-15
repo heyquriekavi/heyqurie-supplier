@@ -82,12 +82,28 @@ export function orderTotal(lines: OrderLine[]): number {
 }
 
 /** "5000 cash", "₹13,838 upi", "2500 by cheque" → amount in paise and a mode. */
+/** How much money a phrase names, in rupees. "2 lakh" is 200000, not 2. */
+const SCALE: Record<string, number> = {
+  crore: 1e7, crores: 1e7, cr: 1e7, karod: 1e7,
+  lakh: 1e5, lakhs: 1e5, lac: 1e5, lacs: 1e5, lak: 1e5, l: 1e5,
+  thousand: 1e3, hazaar: 1e3, hazar: 1e3, k: 1e3,
+};
+// Longest first: "lakhs" must win before "lakh", and "lakh" before the bare "l".
+const SCALE_RE = 'crores|crore|karod|lakhs|lakh|lacs|lac|lak|thousand|hazaar|hazar|cr|k|l';
+
+export function parseAmount(text: string): number | undefined {
+  const t = text.replace(/[,₹]/g, '');
+  const m = t.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${SCALE_RE})?\\b`, 'i'));
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n * (m[2] ? SCALE[m[2].toLowerCase()] ?? 1 : 1);
+}
+
 export function parseCollection(text: string): { amountPaise: number; mode: 'cash' | 'upi' | 'bank' | 'cheque' } | undefined {
-  const digits = text.replace(/[,₹]/g, '').match(/(\d+(?:\.\d+)?)/);
-  if (!digits) return undefined;
-  const amount = Number(digits[1]);
-  if (!Number.isFinite(amount) || amount <= 0) return undefined;
+  const rupees = parseAmount(text);
+  if (rupees === undefined) return undefined;
   const t = text.toLowerCase();
   const mode = /upi|gpay|phonepe|paytm/.test(t) ? 'upi' : /cheque|check/.test(t) ? 'cheque' : /bank|neft|rtgs|imps|transfer/.test(t) ? 'bank' : 'cash';
-  return { amountPaise: Math.round(amount * 100), mode };
+  return { amountPaise: Math.round(rupees * 100), mode };
 }
