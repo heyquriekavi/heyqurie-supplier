@@ -26,6 +26,12 @@ export const listPeople = (kind: 'customer' | 'supplier') => request<ServerPerso
 type ServerShop = Record<string, unknown>;
 type ServerMessage = { id: string; role: string; at: string; text?: string | null; card?: unknown; attachment?: unknown };
 
+export const sendHelp = (text: string) =>
+  request<{ id: string; text: string; created_at: string }>('/api/v1/help', { method: 'POST', body: { text } });
+
+export const getHelp = () =>
+  request<{ id: string; text: string; answered_at: string | null; created_at: string }[]>('/api/v1/help');
+
 export const getChat = (since?: string) =>
   request<{ messages: ServerMessage[] }>(`/api/v1/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`);
 

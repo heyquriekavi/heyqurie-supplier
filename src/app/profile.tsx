@@ -162,22 +162,8 @@ export default function Profile() {
         <Group
           title="Account"
           rows={[
-            { label: 'Export all data', onPress: soon('Export all data', 'Not built yet. Meanwhile everything is in your Supabase project and can be read from there.') },
             { label: 'Subscription', value: shop?.plan ? shop.plan[0].toUpperCase() + shop.plan.slice(1) : 'Trial', onPress: soon('Subscription', 'Not built yet. Nothing is charged and nothing expires while Qurie is in testing.') },
-            {
-              label: 'Help',
-              value: '7867922243',
-              onPress: () =>
-                Alert.alert(
-                  'Help',
-                  'Ask Qurie in the chat \u2014 she answers about your shops, brands, bills and dues.\n\nFor anything else, call or message 7867922243.',
-                  [
-                    { text: 'Close', style: 'cancel' as const },
-                    { text: 'Call', onPress: () => Linking.openURL('tel:7867922243') },
-                    { text: 'WhatsApp', onPress: () => Linking.openURL('https://wa.me/917867922243') },
-                  ],
-                ),
-            },
+            { label: 'Help', value: '7867922243', onPress: () => router.push('/help') },
             { label: 'Server', value: API_URL.replace(/^https?:\/\//, '') },
             { label: 'Log out', danger: true, onPress: () => { signOut().then(() => router.replace('/(auth)/welcome')); } },
           ]}
